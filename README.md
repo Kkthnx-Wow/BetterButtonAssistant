@@ -1,6 +1,9 @@
 # BetterButtonAssistant
-
+   
+<img width="128" height="128" alt="BetterAssistantCurseIcon" src="https://github.com/user-attachments/assets/40dcb215-c4a9-4ab0-b5ad-a6e1d00f6107" />
+   
 BetterButtonAssistant provides a refined and customizable button for World of Warcraft's built-in Assisted Combat feature.
+
 
 ## Features
 
