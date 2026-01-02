@@ -206,6 +206,99 @@ function NS.RegisterSettings()
 		"Only suggest spells that are currently visible on your action bars."
 	)
 
+	-- Avada Tracker Settings
+	local avadaSubcat = Settings.RegisterVerticalLayoutSubcategory(category, "Avada Tracker")
+
+	-- Avada Enabled
+	local avadaEnabledSetting = Register(
+		"avadaEnabled",
+		Settings.VarType.Boolean,
+		"Enable Avada Tracker",
+		true,
+		nil,
+		function()
+			if NS.UpdateLayout then
+				NS.UpdateLayout()
+			end
+			if NS.UpdateNow then
+				NS.UpdateNow()
+			end
+		end
+	)
+	Settings.CreateCheckbox(
+		avadaSubcat,
+		avadaEnabledSetting,
+		"Track important class-specific spells below the suggestion button."
+	)
+
+	-- Avada Size
+	local avadaSizeSetting = Register("avadaSize", Settings.VarType.Number, "Icon Size", 16, nil, function()
+		if NS.UpdateLayout then
+			NS.UpdateLayout()
+		end
+	end)
+	local avadaSizeOptions = Settings.CreateSliderOptions(10, 40, 1)
+	avadaSizeOptions:SetLabelFormatter(labelRight, function(value)
+		return value .. "px"
+	end)
+	Settings.CreateSlider(
+		avadaSubcat,
+		avadaSizeSetting,
+		avadaSizeOptions,
+		"Adjust the size of the Avada tracker icons."
+	)
+
+	-- Avada Spacing
+	local avadaSpacingSetting = Register("avadaSpacing", Settings.VarType.Number, "Spacing", 4, nil, function()
+		if NS.UpdateLayout then
+			NS.UpdateLayout()
+		end
+	end)
+	local avadaSpacingOptions = Settings.CreateSliderOptions(0, 10, 1)
+	avadaSpacingOptions:SetLabelFormatter(labelRight, function(value)
+		return value .. "px"
+	end)
+	Settings.CreateSlider(avadaSubcat, avadaSpacingSetting, avadaSpacingOptions, "Spacing between icons.")
+
+	-- Avada Offset Y
+	local avadaOffsetYSetting = Register(
+		"avadaOffsetY",
+		Settings.VarType.Number,
+		"Vertical Offset",
+		-10,
+		nil,
+		function()
+			if NS.UpdateLayout then
+				NS.UpdateLayout()
+			end
+		end
+	)
+	local avadaOffsetYOptions = Settings.CreateSliderOptions(-50, 50, 1)
+	avadaOffsetYOptions:SetLabelFormatter(labelRight, function(value)
+		return value .. "px"
+	end)
+	Settings.CreateSlider(
+		avadaSubcat,
+		avadaOffsetYSetting,
+		avadaOffsetYOptions,
+		"Vertical position relative to the main button."
+	)
+
+	-- Avada Border
+	local avadaBorderSetting = Register(
+		"avadaShowBorder",
+		Settings.VarType.Boolean,
+		"Show Border",
+		true,
+		nil,
+		function()
+			if NS.UpdateLayout then
+				NS.UpdateLayout()
+			end
+		end
+	)
+	Settings.CreateCheckbox(avadaSubcat, avadaBorderSetting, "Show a border around the Avada icons.")
+
 	Settings.RegisterAddOnCategory(category)
 	NS.SettingsCategory = category
 end

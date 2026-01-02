@@ -1,4 +1,4 @@
-## Interface: 110207
+## Interface: 110207 120000 120001
 ## Title: |cff4e84b1Better|r |cff4e84b1B|cff628db1u|cff7596b1t|cff899eb0t|cff9ca7b0o|cffb0b0b0n|r |cffb0b0b0Assistant|r
 ## Notes: A refined, customizable button for Blizzard's Assisted Combat. Features modern styling, keybinds, and visibility controls.|n|n|cff5C8BCFDeveloper|cffffffff:|r |nJosh "|CFF7b8489Kkthnx|r" Russell|n|n|cff009cdePayPal|r|cffffffff:|r |n|cffffffffwww.paypal.me/KkthnxTV|r|n|n|cfff96854Patreon|r|cffffffff:|r |n|cffffffffwww.patreon.com/Kkthnx|r
 ## Author: Josh "Kkthnx" Russell
