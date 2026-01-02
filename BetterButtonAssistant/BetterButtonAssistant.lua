@@ -497,27 +497,8 @@ addonFrame:SetScript("OnEvent", function(self, event, ...)
 	end
 
 	-- Any binding/bar changes => wipe cache + refresh (debounced)
-	if
-		event == "UPDATE_BINDINGS"
-		or event == "ACTIONBAR_SLOT_CHANGED"
-		or event == "SPELLS_CHANGED"
-		or event == "ACTIONBAR_PAGE_CHANGED"
-		or event == "UPDATE_BONUS_ACTIONBAR"
-		or event == "UPDATE_VEHICLE_ACTIONBAR"
-		or event == "UPDATE_OVERRIDE_ACTIONBAR"
-		or event == "ACTIONBAR_UPDATE_STATE"
-		or event == "PLAYER_TALENT_UPDATE"
-		or event == "PLAYER_SPECIALIZATION_CHANGED"
-		or event == "UPDATE_SHAPESHIFT_FORM"
-		or event == "TRAIT_CONFIG_UPDATED"
-		or event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED"
-	then
-		if
-			event == "TRAIT_CONFIG_UPDATED"
-			or event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED"
-			or event == "PLAYER_SPECIALIZATION_CHANGED"
-			or event == "PLAYER_TALENT_UPDATE"
-		then
+	if event == "UPDATE_BINDINGS" or event == "ACTIONBAR_SLOT_CHANGED" or event == "SPELLS_CHANGED" or event == "ACTIONBAR_PAGE_CHANGED" or event == "UPDATE_BONUS_ACTIONBAR" or event == "UPDATE_VEHICLE_ACTIONBAR" or event == "UPDATE_OVERRIDE_ACTIONBAR" or event == "ACTIONBAR_UPDATE_STATE" or event == "PLAYER_TALENT_UPDATE" or event == "PLAYER_SPECIALIZATION_CHANGED" or event == "UPDATE_SHAPESHIFT_FORM" or event == "TRAIT_CONFIG_UPDATED" or event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED" then
+		if event == "TRAIT_CONFIG_UPDATED" or event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_TALENT_UPDATE" then
 			NS.RefreshAvadaCachedData()
 			NS.UpdateAvadaLayout()
 		end
@@ -525,15 +506,7 @@ addonFrame:SetScript("OnEvent", function(self, event, ...)
 	end
 
 	-- Visibility changes (Combat/Vehicle/Target)
-	if
-		event == "PLAYER_REGEN_ENABLED"
-		or event == "PLAYER_REGEN_DISABLED"
-		or event == "UNIT_ENTERED_VEHICLE"
-		or event == "UNIT_EXITED_VEHICLE"
-		or event == "PLAYER_ENTERING_WORLD"
-		or event == "PLAYER_TARGET_CHANGED"
-		or event == "UNIT_AURA"
-	then
+	if event == "PLAYER_REGEN_ENABLED" or event == "PLAYER_REGEN_DISABLED" or event == "UNIT_ENTERED_VEHICLE" or event == "UNIT_EXITED_VEHICLE" or event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_TARGET_CHANGED" or event == "UNIT_AURA" then
 		NS.UpdateVisibility()
 		if event == "PLAYER_TARGET_CHANGED" then
 			if not NS.WatchUnits["target"] then

@@ -10,8 +10,7 @@ function NS.RegisterSettings()
 
 	-- Helper to register settings
 	local function Register(key, varType, name, defaultValue, description, callback)
-		local setting =
-			Settings.RegisterAddOnSetting(category, ADDON_NAME .. "_" .. key, key, NS.db, varType, name, defaultValue)
+		local setting = Settings.RegisterAddOnSetting(category, ADDON_NAME .. "_" .. key, key, NS.db, varType, name, defaultValue)
 		if callback then
 			setting:SetValueChangedCallback(callback)
 		end
@@ -19,34 +18,22 @@ function NS.RegisterSettings()
 	end
 
 	-- General Toggle
-	local enabledSetting = Register(
-		"enabled",
-		Settings.VarType.Boolean,
-		"Enabled",
-		true,
-		"Enable or disable the addon.",
-		function()
-			if NS.UpdateNow then
-				NS.UpdateNow()
-			end
+	local enabledSetting = Register("enabled", Settings.VarType.Boolean, "Enabled", true, "Enable or disable the addon.", function()
+		if NS.UpdateNow then
+			NS.UpdateNow()
 		end
-	)
+	end)
 	Settings.CreateCheckbox(category, enabledSetting, "Toggle BetterAssistant on/off.")
 
 	-- Lock Toggle
-	local lockedSetting =
-		Register("locked", Settings.VarType.Boolean, "Locked", false, "Lock the frame to prevent dragging.")
+	local lockedSetting = Register("locked", Settings.VarType.Boolean, "Locked", false, "Lock the frame to prevent dragging.")
 	Settings.CreateCheckbox(category, lockedSetting, "Lock the suggestion button in place.")
 
 	-- Visual Settings Category
 	local visualSubcat = Settings.RegisterVerticalLayoutSubcategory(category, "Visuals")
 
 	-- The "Right" label is standard for showing values next to sliders
-	local labelRight = (
-		MinimalSliderWithSteppersMixin
-		and MinimalSliderWithSteppersMixin.Label
-		and MinimalSliderWithSteppersMixin.Label.Right
-	) or 2
+	local labelRight = (MinimalSliderWithSteppersMixin and MinimalSliderWithSteppersMixin.Label and MinimalSliderWithSteppersMixin.Label.Right) or 2
 
 	-- Button Size
 	local sizeSetting = Register("buttonSize", Settings.VarType.Number, "Button Size", 40, nil, function()
@@ -83,28 +70,16 @@ function NS.RegisterSettings()
 	-- Visibility Category
 	local visibilitySubcat = Settings.RegisterVerticalLayoutSubcategory(category, "Visibility")
 
-	local alphaCombatSetting = Register(
-		"alphaCombat",
-		Settings.VarType.Number,
-		"Alpha (In Combat)",
-		1.0,
-		nil,
-		function()
-			if NS.UpdateVisibility then
-				NS.UpdateVisibility()
-			end
+	local alphaCombatSetting = Register("alphaCombat", Settings.VarType.Number, "Alpha (In Combat)", 1.0, nil, function()
+		if NS.UpdateVisibility then
+			NS.UpdateVisibility()
 		end
-	)
+	end)
 	local alphaCombatOptions = Settings.CreateSliderOptions(0.0, 1.0, 0.05)
 	alphaCombatOptions:SetLabelFormatter(labelRight, function(value)
 		return (NS.math_floor(value * 100)) .. "%"
 	end)
-	Settings.CreateSlider(
-		visibilitySubcat,
-		alphaCombatSetting,
-		alphaCombatOptions,
-		"Opacity of the frame when in combat."
-	)
+	Settings.CreateSlider(visibilitySubcat, alphaCombatSetting, alphaCombatOptions, "Opacity of the frame when in combat.")
 
 	local alphaOOCSetting = Register("alphaOOC", Settings.VarType.Number, "Alpha (Out of Combat)", 0.5, nil, function()
 		if NS.UpdateVisibility then
@@ -115,39 +90,20 @@ function NS.RegisterSettings()
 	alphaOOCOptions:SetLabelFormatter(labelRight, function(value)
 		return (NS.math_floor(value * 100)) .. "%"
 	end)
-	Settings.CreateSlider(
-		visibilitySubcat,
-		alphaOOCSetting,
-		alphaOOCOptions,
-		"Opacity of the frame when out of combat."
-	)
+	Settings.CreateSlider(visibilitySubcat, alphaOOCSetting, alphaOOCOptions, "Opacity of the frame when out of combat.")
 
-	local onlyInCombatSetting = Register(
-		"onlyInCombat",
-		Settings.VarType.Boolean,
-		"Only Show in Combat",
-		false,
-		nil,
-		function()
-			if NS.UpdateVisibility then
-				NS.UpdateVisibility()
-			end
+	local onlyInCombatSetting = Register("onlyInCombat", Settings.VarType.Boolean, "Only Show in Combat", false, nil, function()
+		if NS.UpdateVisibility then
+			NS.UpdateVisibility()
 		end
-	)
+	end)
 	Settings.CreateCheckbox(visibilitySubcat, onlyInCombatSetting, "Hide the frame completely when not in combat.")
 
-	local hideInVehicleSetting = Register(
-		"hideInVehicle",
-		Settings.VarType.Boolean,
-		"Hide in Vehicle",
-		true,
-		nil,
-		function()
-			if NS.UpdateVisibility then
-				NS.UpdateVisibility()
-			end
+	local hideInVehicleSetting = Register("hideInVehicle", Settings.VarType.Boolean, "Hide in Vehicle", true, nil, function()
+		if NS.UpdateVisibility then
+			NS.UpdateVisibility()
 		end
-	)
+	end)
 	Settings.CreateCheckbox(visibilitySubcat, hideInVehicleSetting, "Hide the frame when in a vehicle.")
 
 	-- Keybinds Category
@@ -162,18 +118,11 @@ function NS.RegisterSettings()
 	Settings.CreateCheckbox(keybindSubcat, showKeybindSetting, "Show the keybind text on the button.")
 
 	-- Keybind Font Size
-	local fontSizeSetting = Register(
-		"keybindFontSize",
-		Settings.VarType.Number,
-		"Keybind Font Size",
-		12,
-		nil,
-		function()
-			if NS.UpdateLayout then
-				NS.UpdateLayout()
-			end
+	local fontSizeSetting = Register("keybindFontSize", Settings.VarType.Number, "Keybind Font Size", 12, nil, function()
+		if NS.UpdateLayout then
+			NS.UpdateLayout()
 		end
-	)
+	end)
 	local fontOptions = Settings.CreateSliderOptions(6, 24, 1)
 	fontOptions:SetLabelFormatter(labelRight, function(value)
 		return value .. "pt"
@@ -181,18 +130,11 @@ function NS.RegisterSettings()
 	Settings.CreateSlider(keybindSubcat, fontSizeSetting, fontOptions, "Adjust the size of the keybind text.")
 
 	-- Show Cooldown
-	local showCooldownSetting = Register(
-		"showCooldown",
-		Settings.VarType.Boolean,
-		"Show Cooldown",
-		true,
-		nil,
-		function()
-			if NS.UpdateNow then
-				NS.UpdateNow()
-			end
+	local showCooldownSetting = Register("showCooldown", Settings.VarType.Boolean, "Show Cooldown", true, nil, function()
+		if NS.UpdateNow then
+			NS.UpdateNow()
 		end
-	)
+	end)
 	Settings.CreateCheckbox(keybindSubcat, showCooldownSetting, "Show the cooldown animation.")
 
 	-- Logic Category
@@ -200,36 +142,21 @@ function NS.RegisterSettings()
 
 	-- Visible Button Check
 	local visibleSetting = Register("checkVisibleButton", Settings.VarType.Boolean, "Check Visible Buttons", true)
-	Settings.CreateCheckbox(
-		logicSubcat,
-		visibleSetting,
-		"Only suggest spells that are currently visible on your action bars."
-	)
+	Settings.CreateCheckbox(logicSubcat, visibleSetting, "Only suggest spells that are currently visible on your action bars.")
 
 	-- Avada Tracker Settings
 	local avadaSubcat = Settings.RegisterVerticalLayoutSubcategory(category, "Avada Tracker")
 
 	-- Avada Enabled
-	local avadaEnabledSetting = Register(
-		"avadaEnabled",
-		Settings.VarType.Boolean,
-		"Enable Avada Tracker",
-		true,
-		nil,
-		function()
-			if NS.UpdateLayout then
-				NS.UpdateLayout()
-			end
-			if NS.UpdateNow then
-				NS.UpdateNow()
-			end
+	local avadaEnabledSetting = Register("avadaEnabled", Settings.VarType.Boolean, "Enable Avada Tracker", true, nil, function()
+		if NS.UpdateLayout then
+			NS.UpdateLayout()
 		end
-	)
-	Settings.CreateCheckbox(
-		avadaSubcat,
-		avadaEnabledSetting,
-		"Track important class-specific spells below the suggestion button."
-	)
+		if NS.UpdateNow then
+			NS.UpdateNow()
+		end
+	end)
+	Settings.CreateCheckbox(avadaSubcat, avadaEnabledSetting, "Track important class-specific spells below the suggestion button.")
 
 	-- Avada Size
 	local avadaSizeSetting = Register("avadaSize", Settings.VarType.Number, "Icon Size", 16, nil, function()
@@ -241,12 +168,7 @@ function NS.RegisterSettings()
 	avadaSizeOptions:SetLabelFormatter(labelRight, function(value)
 		return value .. "px"
 	end)
-	Settings.CreateSlider(
-		avadaSubcat,
-		avadaSizeSetting,
-		avadaSizeOptions,
-		"Adjust the size of the Avada tracker icons."
-	)
+	Settings.CreateSlider(avadaSubcat, avadaSizeSetting, avadaSizeOptions, "Adjust the size of the Avada tracker icons.")
 
 	-- Avada Spacing
 	local avadaSpacingSetting = Register("avadaSpacing", Settings.VarType.Number, "Spacing", 4, nil, function()
@@ -261,42 +183,23 @@ function NS.RegisterSettings()
 	Settings.CreateSlider(avadaSubcat, avadaSpacingSetting, avadaSpacingOptions, "Spacing between icons.")
 
 	-- Avada Offset Y
-	local avadaOffsetYSetting = Register(
-		"avadaOffsetY",
-		Settings.VarType.Number,
-		"Vertical Offset",
-		-10,
-		nil,
-		function()
-			if NS.UpdateLayout then
-				NS.UpdateLayout()
-			end
+	local avadaOffsetYSetting = Register("avadaOffsetY", Settings.VarType.Number, "Vertical Offset", -10, nil, function()
+		if NS.UpdateLayout then
+			NS.UpdateLayout()
 		end
-	)
+	end)
 	local avadaOffsetYOptions = Settings.CreateSliderOptions(-50, 50, 1)
 	avadaOffsetYOptions:SetLabelFormatter(labelRight, function(value)
 		return value .. "px"
 	end)
-	Settings.CreateSlider(
-		avadaSubcat,
-		avadaOffsetYSetting,
-		avadaOffsetYOptions,
-		"Vertical position relative to the main button."
-	)
+	Settings.CreateSlider(avadaSubcat, avadaOffsetYSetting, avadaOffsetYOptions, "Vertical position relative to the main button.")
 
 	-- Avada Border
-	local avadaBorderSetting = Register(
-		"avadaShowBorder",
-		Settings.VarType.Boolean,
-		"Show Border",
-		true,
-		nil,
-		function()
-			if NS.UpdateLayout then
-				NS.UpdateLayout()
-			end
+	local avadaBorderSetting = Register("avadaShowBorder", Settings.VarType.Boolean, "Show Border", true, nil, function()
+		if NS.UpdateLayout then
+			NS.UpdateLayout()
 		end
-	)
+	end)
 	Settings.CreateCheckbox(avadaSubcat, avadaBorderSetting, "Show a border around the Avada icons.")
 
 	Settings.RegisterAddOnCategory(category)
@@ -309,7 +212,6 @@ end
 SLASH_BETTERBUTTONASSISTANT1 = "/betterbuttonassistant"
 SLASH_BETTERBUTTONASSISTANT2 = "/bba"
 SLASH_BETTERBUTTONASSISTANT3 = "/betterassistant"
-SLASH_BETTERBUTTONASSISTANT4 = "/ba"
 
 SlashCmdList.BETTERBUTTONASSISTANT = function(msg)
 	msg = msg and NS.string_lower(msg) or ""

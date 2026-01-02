@@ -234,11 +234,7 @@ function NS.ReadKeybindings(event)
 
 	for i = 73, 144 do
 		if not slotsUsed[i] then
-			NS.StoreKeybindInfo(
-				7 + NS.math_floor((i - 73) / 12),
-				NS.GetBindingKey("ACTIONBUTTON" .. 1 + (i - 73) % 12),
-				NS.GetActionInfo(i)
-			)
+			NS.StoreKeybindInfo(7 + NS.math_floor((i - 73) / 12), NS.GetBindingKey("ACTIONBUTTON" .. 1 + (i - 73) % 12), NS.GetActionInfo(i))
 			slotsUsed[i] = true
 		end
 	end
@@ -268,13 +264,7 @@ function NS.ReadKeybindings(event)
 				local bind = NS._G.ConsolePort:GetActionBinding(i)
 				local key, mod = NS._G.ConsolePort:GetCurrentBindingOwner(bind)
 				if key then
-					NS.StoreKeybindInfo(
-						NS.math_ceil(i / 12),
-						NS._G.ConsolePort:GetFormattedButtonCombination(key, mod),
-						action,
-						id,
-						"cPort"
-					)
+					NS.StoreKeybindInfo(NS.math_ceil(i / 12), NS._G.ConsolePort:GetFormattedButtonCombination(key, mod), action, id, "cPort")
 				end
 			end
 		end
@@ -348,22 +338,7 @@ function NS.GetBindingForAction(key, display, i)
 		size = NS.tonumber(size)
 		if size then
 			local margin = NS.math_floor(size * (display and display.keybindings.cPortZoom or 1) * 0.5)
-			output = output:gsub(
-				":0|t",
-				":0:"
-					.. size
-					.. ":"
-					.. size
-					.. ":"
-					.. margin
-					.. ":"
-					.. (size - margin)
-					.. ":"
-					.. margin
-					.. ":"
-					.. (size - margin)
-					.. "|t"
-			)
+			output = output:gsub(":0|t", ":0:" .. size .. ":" .. size .. ":" .. margin .. ":" .. (size - margin) .. ":" .. margin .. ":" .. (size - margin) .. "|t")
 		end
 	end
 
