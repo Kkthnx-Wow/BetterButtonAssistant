@@ -229,3 +229,11 @@ SlashCmdList.BETTERBUTTONASSISTANT = function(msg)
 		Settings.OpenToCategory(NS.SettingsCategory:GetID())
 	end
 end
+
+-- Avada Config Slash Command
+SLASH_BETTERBUTTONASSISTANT_AVADA1 = "/aa"
+SlashCmdList.BETTERBUTTONASSISTANT_AVADA = function()
+	if NS.SetupAvada then
+		NS.SetupAvada()
+	end
+end

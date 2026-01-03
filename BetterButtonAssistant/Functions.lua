@@ -513,7 +513,23 @@ function NS.RefreshAvadaCachedData()
 		return
 	end
 
-	local data = NS.AvadaData[specID]
+	-- Check for user-defined profile index
+	local activeIndex = (NS.db.avadaIndices and NS.db.avadaIndices[specID]) or 1
+	local data
+
+	if activeIndex ~= 1 then
+		-- index 1 is usually reserved for the default string or "none" in some contexts,
+		-- in our case, if index > 1 and we have a custom profile, use it.
+		if NS.db.avadaProfiles and NS.db.avadaProfiles[specID] and NS.db.avadaProfiles[specID][activeIndex] then
+			data = NS.db.avadaProfiles[specID][activeIndex]
+		end
+	end
+
+	-- Fallback to hardcoded default if index 1 or no custom profile found
+	if not data or data == "" then
+		data = NS.AvadaData[specID]
+	end
+
 	NS.wipe(NS.CachedAvadaData)
 
 	if data and data ~= "" then

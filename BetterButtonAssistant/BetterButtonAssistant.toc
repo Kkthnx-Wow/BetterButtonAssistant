@@ -22,4 +22,5 @@
 Constants.lua
 Functions.lua
 Config.lua
+AvadaConfig.lua
 BetterButtonAssistant.lua

@@ -82,6 +82,8 @@ NS.defaults = {
 	avadaSpacing = 4,
 	avadaOffsetY = -10,
 	avadaShowBorder = true,
+	avadaIndices = {}, -- Character specID -> profileIndex
+	avadaProfiles = {}, -- Character/Account specID -> { [index] = "dataString" }
 }
 
 -- Hekili-style Data Structures
