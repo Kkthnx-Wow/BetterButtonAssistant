@@ -97,10 +97,14 @@ function NS.UpdateAvadaLayout()
 	local size = NS.db.avadaSize or 16
 	local spacing = NS.db.avadaSpacing or 4
 	local offsetY = NS.db.avadaOffsetY or -10
-	local showBorder = NS.db.avadaShowBorder
+	local showBorder = NS.db.showBorder
 
 	f:ClearAllPoints()
-	f:SetPoint("TOP", frame.button, "BOTTOM", 0, offsetY)
+	if (NS.db.avadaPosition or "BOTTOM") == "TOP" then
+		f:SetPoint("BOTTOM", frame.button, "TOP", 0, (offsetY * -1))
+	else
+		f:SetPoint("TOP", frame.button, "BOTTOM", 0, offsetY)
+	end
 	f:SetSize((size + spacing) * 6 - spacing, size)
 
 	if not f.value then
@@ -397,6 +401,50 @@ local function UpdateButton(b, spellID)
 		b.hotkey:Hide()
 	end
 
+	-- Range and Usability Checks
+	if NS.db.rangeColoring then
+		local inRange = true
+		if NS.C_Spell_IsSpellInRange then
+			-- returns true (1), false (0), or nil (invalid target/spell)
+			-- We treat nil as "in range" (e.g., self-cast or no target requirement)
+			local val = NS.C_Spell_IsSpellInRange(spellID, "target")
+			if val == false or val == 0 then
+				inRange = false
+			end
+		end
+
+		if not inRange then
+			-- Out of Range: Red and Desaturated
+			b.icon:SetVertexColor(1.0, 0.0, 0.0)
+			b.icon:SetDesaturated(true)
+		else
+			-- In Range, check Usability (Mana, Energy, Rage, etc.)
+			local isUsable = true
+			local noMana = false
+			if NS.C_Spell_IsSpellUsable then
+				local u, m = NS.C_Spell_IsSpellUsable(spellID)
+				if u == false then -- explicit false check
+					isUsable = false
+					noMana = m -- true if oom
+				end
+			end
+
+			if not isUsable then
+				-- Unusable: Grey and Desaturated
+				b.icon:SetVertexColor(0.4, 0.4, 0.4)
+				b.icon:SetDesaturated(true)
+			else
+				-- Normal: White and Saturated
+				b.icon:SetVertexColor(1.0, 1.0, 1.0)
+				b.icon:SetDesaturated(false)
+			end
+		end
+	else
+		-- Reset to normal if coloring is disabled
+		b.icon:SetVertexColor(1.0, 1.0, 1.0)
+		b.icon:SetDesaturated(false)
+	end
+
 	UpdateCooldownForSpell(b, spellID)
 	b:Show()
 end
@@ -460,7 +508,11 @@ addonFrame:RegisterEvent("BAG_UPDATE_COOLDOWN")
 addonFrame:RegisterEvent("SPELL_UPDATE_CHARGES")
 addonFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 addonFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
-addonFrame:RegisterEvent("UNIT_AURA")
+if addonFrame.RegisterUnitEvent then
+	addonFrame:RegisterUnitEvent("UNIT_AURA", "player", "target", "pet")
+else
+	addonFrame:RegisterEvent("UNIT_AURA")
+end
 
 local allTimer
 local function DelayedUpdateKeybindings()
@@ -524,13 +576,18 @@ addonFrame:SetScript("OnEvent", function(self, event, ...)
 					NS.UpdateAvada()
 				end
 			end
-		elseif event == "SPELL_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_CHARGES" then
-			if NS.WatchTypes["cd"] then
-				NS.UpdateAvada()
-			end
-		elseif event == "BAG_UPDATE_COOLDOWN" then
-			if NS.WatchTypes["item"] then
-				NS.UpdateAvada()
+		elseif event == "SPELL_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_CHARGES" or event == "BAG_UPDATE_COOLDOWN" then
+			-- Throttled Update for cooldowns to prevent excessive redraws during combat actions
+			if not NS.cooldownTimer then
+				NS.cooldownTimer = NS.C_Timer_After(0.05, function()
+					if NS.WatchTypes["cd"] then
+						NS.UpdateAvada()
+					end
+					if NS.WatchTypes["item"] then
+						NS.UpdateAvada()
+					end
+					NS.cooldownTimer = nil
+				end)
 			end
 		end
 	end

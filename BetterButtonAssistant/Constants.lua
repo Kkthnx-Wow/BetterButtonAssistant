@@ -43,7 +43,10 @@ NS.C_Spell_GetSpellTexture = C_Spell and C_Spell.GetSpellTexture
 NS.C_Spell_GetSpellCooldown = C_Spell and C_Spell.GetSpellCooldown
 NS.C_Spell_GetSpellCharges = C_Spell and C_Spell.GetSpellCharges
 NS.C_UnitAuras_GetAuraDataBySpellID = C_UnitAuras and C_UnitAuras.GetAuraDataBySpellID
+NS.C_UnitAuras_GetAuraDataBySpellID = C_UnitAuras and C_UnitAuras.GetAuraDataBySpellID
 NS.C_UnitAuras_GetAuraDataByIndex = C_UnitAuras and C_UnitAuras.GetAuraDataByIndex
+NS.C_Spell_IsSpellInRange = C_Spell and C_Spell.IsSpellInRange
+NS.C_Spell_IsSpellUsable = C_Spell and C_Spell.IsSpellUsable
 NS.GetSpecialization = GetSpecialization
 NS.GetSpecializationInfo = GetSpecializationInfo
 NS.UnitClass = UnitClass
@@ -72,6 +75,7 @@ NS.defaults = {
 	showKeybind = true,
 	showCooldown = true,
 	showBorder = true,
+	rangeColoring = true,
 
 	checkVisibleButton = true, -- affects GetNextCastSpell on some setups
 	updateRate = 0.12,
@@ -81,7 +85,7 @@ NS.defaults = {
 	avadaSize = 16,
 	avadaSpacing = 4,
 	avadaOffsetY = -10,
-	avadaShowBorder = true,
+	avadaPosition = "BOTTOM",
 	avadaIndices = {}, -- Character specID -> profileIndex
 	avadaProfiles = {}, -- Character/Account specID -> { [index] = "dataString" }
 }

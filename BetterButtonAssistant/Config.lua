@@ -67,6 +67,14 @@ function NS.RegisterSettings()
 	end)
 	Settings.CreateSlider(visualSubcat, scaleSetting, scaleOptions, "Overall scale of the assistant UI.")
 
+	-- Range & Usability Coloring
+	local rangeSetting = Register("rangeColoring", Settings.VarType.Boolean, "Range/Usability Coloring", true, nil, function()
+		if NS.UpdateNow then
+			NS.UpdateNow()
+		end
+	end)
+	Settings.CreateCheckbox(visualSubcat, rangeSetting, "Color the button red when out of range, or grey when unusable (OOM/Energy).")
+
 	-- Visibility Category
 	local visibilitySubcat = Settings.RegisterVerticalLayoutSubcategory(category, "Visibility")
 
@@ -195,12 +203,24 @@ function NS.RegisterSettings()
 	Settings.CreateSlider(avadaSubcat, avadaOffsetYSetting, avadaOffsetYOptions, "Vertical position relative to the main button.")
 
 	-- Avada Border
-	local avadaBorderSetting = Register("avadaShowBorder", Settings.VarType.Boolean, "Show Border", true, nil, function()
+	-- Avada Position
+	local avadaPositionSetting = Settings.RegisterAddOnSetting(avadaSubcat, ADDON_NAME .. "_avadaPosition", "avadaPosition", NS.db, Settings.VarType.String, "Position", "BOTTOM")
+	avadaPositionSetting:SetValueChangedCallback(function()
 		if NS.UpdateLayout then
 			NS.UpdateLayout()
 		end
 	end)
-	Settings.CreateCheckbox(avadaSubcat, avadaBorderSetting, "Show a border around the Avada icons.")
+
+	local function GetAvadaPositionOptions()
+		local container = Settings.CreateControlTextContainer()
+		container:Add("TOP", "Top")
+		container:Add("BOTTOM", "Bottom")
+		return container:GetData()
+	end
+
+	Settings.CreateDropdown(avadaSubcat, avadaPositionSetting, GetAvadaPositionOptions, "Position of the Avada tracker relative to the main button.")
+
+	-- Trinket Tracker Settings
 
 	Settings.RegisterAddOnCategory(category)
 	NS.SettingsCategory = category
