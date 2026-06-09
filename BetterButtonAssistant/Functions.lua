@@ -1,8 +1,20 @@
 local _, NS = ...
 
+-- File-level locals for hot-path performance (avoids NS.* table lookup overhead).
+-- Constants.lua loads before this file, so the cached API refs already exist.
+local math_floor = math.floor
+local math_ceil = math.ceil
+local C_Spell_GetOverrideSpell = NS.C_Spell_GetOverrideSpell
+local C_Spell_IsSpellUsable = NS.C_Spell_IsSpellUsable
+local C_Spell_IsSpellInRange = NS.C_Spell_IsSpellInRange
+local FindSpellOverrideByID = NS.FindSpellOverrideByID
+-- Midnight (12.0) secret-value detector; nil on pre-Midnight clients (no-op guard).
+local issecretvalue = NS.issecretvalue
+
 -- ---------------------------------------------------------------------
 -- Utility Functions
 -- ---------------------------------------------------------------------
+
 
 function NS.CopyDefaults(dst, src)
 	for k, v in NS.pairs(src) do
@@ -26,15 +38,68 @@ function NS.improvedGetBindingText(binding)
 		return ""
 	end
 
+	local cache = NS.KeybindTextCache
+	local cached = cache[binding]
+	if cached then
+		return cached
+	end
+
+	local original = binding
 	for _, rep in NS.ipairs(NS.BindingSubs) do
 		binding = binding:gsub(rep[1], rep[2])
 	end
 
+	cache[original] = binding
 	return binding
+end
+
+-- Returns the spell currently displayed/executed for a base spell when Blizzard's
+-- override systems are active (proc transforms, stance/form replacements, talent
+-- replacements). Cached per rebuild window; callers must not compare secret IDs.
+function NS.GetDisplaySpellID(spellID)
+	if not spellID or spellID == 0 then
+		return spellID
+	end
+	if issecretvalue and issecretvalue(spellID) then
+		return spellID
+	end
+
+	local cache = NS.SpellVariantCache
+	local cached = cache[spellID]
+	if cached ~= nil then
+		return cached or spellID
+	end
+
+	local overrideID
+	if C_Spell_GetOverrideSpell then
+		local ok, result = NS.pcall(C_Spell_GetOverrideSpell, spellID, 0, false)
+		if ok and result and not (issecretvalue and issecretvalue(result)) and result ~= 0 and result ~= spellID then
+			overrideID = result
+		end
+	end
+	if not overrideID and FindSpellOverrideByID then
+		local ok, result = NS.pcall(FindSpellOverrideByID, spellID)
+		if ok and result and not (issecretvalue and issecretvalue(result)) and result ~= 0 and result ~= spellID then
+			overrideID = result
+		end
+	end
+
+	cache[spellID] = overrideID or false
+	return overrideID or spellID
 end
 
 function NS.StoreKeybindInfo(page, key, aType, id, console)
 	if not key or not aType or not id then
+		return
+	end
+
+	-- Skip Blizzard's Assisted Combat placeholder action. On the default-bar path
+	-- the 3rd GetActionInfo return (subType) arrives here as `console`, and an
+	-- assisted-combat slot reports subType == "assistedcombat". Its resolved spell
+	-- changes every GCD, so caching a binding for it would map whatever spell is
+	-- currently suggested onto the one-button assist key (transient and wrong). The
+	-- spell's real keybind on an actual bar slot is still captured separately.
+	if console == "assistedcombat" or (aType == "spell" and id == "assistedcombat") then
 		return
 	end
 
@@ -87,9 +152,16 @@ function NS.StoreKeybindInfo(page, key, aType, id, console)
 
 		-- If it's a spell, also store it under the base ID
 		if aType == "spell" then
-			local baseID = NS.FindBaseSpellByID(NS.tonumber(action))
-			if baseID and NS.tostring(baseID) ~= action then
-				save(NS.tostring(baseID))
+			local spellNum = NS.tonumber(action)
+			if spellNum then
+				local baseID = NS.FindBaseSpellByID(spellNum)
+				if baseID and baseID ~= spellNum then
+					save(NS.tostring(baseID))
+				end
+				local displayID = NS.GetDisplaySpellID(spellNum)
+				if displayID and displayID ~= spellNum then
+					save(NS.tostring(displayID))
+				end
 			end
 		end
 	end
@@ -105,15 +177,18 @@ function NS.ReadKeybindings(event)
 		NS.wipe(v.lower)
 	end
 	NS.wipe(updatedKeys)
+	NS.wipe(NS.KeybindCache)
+	NS.wipe(NS.ActionSlotCache)
+	NS.wipe(NS.SpellVariantCache)
+	NS.wipe(NS.KeybindTextCache)
 
 	local slotsUsed = {}
 
 	-- Bartender4 support
 	if NS._G["Bartender4"] then
-		slotsUsed = {}
 		for i = 1, 180 do
 			local keybind = "CLICK BT4Button" .. i .. ":Keybind"
-			local bar = NS.math_floor((i - 1) / 12) + 1
+			local bar = math_floor((i - 1) / 12) + 1
 			local key = NS.GetBindingKey(keybind)
 			if key then
 				NS.StoreKeybindInfo(bar, key, NS.GetActionInfo(i))
@@ -123,7 +198,6 @@ function NS.ReadKeybindings(event)
 
 	-- Dominos support
 	elseif NS.C_AddOns_IsAddOnLoaded("Dominos") then
-		slotsUsed = {}
 		for i = 1, 14 do
 			local bar = NS._G["DominosFrame" .. i]
 			if bar and bar.buttons then
@@ -168,7 +242,6 @@ function NS.ReadKeybindings(event)
 
 	-- ElvUI support (Use ElvUI's actionbars only if they are actually enabled)
 	elseif NS._G["ElvUI"] and NS._G["ElvUI_Bar1Button1"] then
-		slotsUsed = {}
 		for i = 1, 15 do
 			for b = 1, 12 do
 				local btn = NS._G["ElvUI_Bar" .. i .. "Button" .. b]
@@ -234,7 +307,11 @@ function NS.ReadKeybindings(event)
 
 	for i = 73, 144 do
 		if not slotsUsed[i] then
-			NS.StoreKeybindInfo(7 + NS.math_floor((i - 73) / 12), NS.GetBindingKey("ACTIONBUTTON" .. 1 + (i - 73) % 12), NS.GetActionInfo(i))
+			NS.StoreKeybindInfo(
+				7 + math_floor((i - 73) / 12),
+				NS.GetBindingKey("ACTIONBUTTON" .. 1 + (i - 73) % 12),
+				NS.GetActionInfo(i)
+			)
 			slotsUsed[i] = true
 		end
 	end
@@ -264,7 +341,13 @@ function NS.ReadKeybindings(event)
 				local bind = NS._G.ConsolePort:GetActionBinding(i)
 				local key, mod = NS._G.ConsolePort:GetCurrentBindingOwner(bind)
 				if key then
-					NS.StoreKeybindInfo(NS.math_ceil(i / 12), NS._G.ConsolePort:GetFormattedButtonCombination(key, mod), action, id, "cPort")
+					NS.StoreKeybindInfo(
+						math_ceil(i / 12),
+						NS._G.ConsolePort:GetFormattedButtonCombination(key, mod),
+						action,
+						id,
+						"cPort"
+					)
 				end
 			end
 		end
@@ -298,8 +381,8 @@ function NS.GetBindingForAction(key, display, i)
 	local output, source
 	local order = NS.BarOrder["DEFAULT"]
 
-	-- Class-specific logic
-	local _, class = NS._G.UnitClass("player")
+	-- Cache player class once per session; refreshed if class somehow changes.
+	local _, class = NS.UnitClass("player")
 	if class == "DRUID" then
 		local form = NS._G.GetShapeshiftForm()
 		if form == 1 then -- Bear
@@ -338,7 +421,22 @@ function NS.GetBindingForAction(key, display, i)
 		size = NS.tonumber(size)
 		if size then
 			local margin = NS.math_floor(size * (display and display.keybindings.cPortZoom or 1) * 0.5)
-			output = output:gsub(":0|t", ":0:" .. size .. ":" .. size .. ":" .. margin .. ":" .. (size - margin) .. ":" .. margin .. ":" .. (size - margin) .. "|t")
+			output = output:gsub(
+				":0|t",
+				":0:"
+					.. size
+					.. ":"
+					.. size
+					.. ":"
+					.. margin
+					.. ":"
+					.. (size - margin)
+					.. ":"
+					.. margin
+					.. ":"
+					.. (size - margin)
+					.. "|t"
+			)
 		end
 	end
 
@@ -349,16 +447,40 @@ function NS.GetKeyBindForSpellID(identifier)
 	if not identifier then
 		return nil
 	end
+	if issecretvalue and issecretvalue(identifier) then
+		return ""
+	end
 
-	-- Instant lookup from the database
+	-- Memoized: the cache is wiped in ReadKeybindings on any binding/bar/form/spec
+	-- change, so a hit here is always current and skips the FindSpellActionButtons
+	-- fallback scan on the hot path.
+	local cache = NS.KeybindCache
+	local cached = cache[identifier]
+	if cached ~= nil then
+		return cached
+	end
+
+	-- Instant lookup from the database. Try all spell variants JustAC taught us
+	-- matter in practice: original ID, base ID, and current display/override ID.
+	-- This catches proc/form/talent transforms without scanning action bars.
 	local baseID = NS.FindBaseSpellByID(identifier) or identifier
-	local text = NS.GetBindingForAction(baseID) or NS.GetBindingForAction(identifier)
+	local displayID = NS.GetDisplaySpellID(identifier)
+	local text = NS.GetBindingForAction(identifier)
+	if not text or text == "" then
+		text = NS.GetBindingForAction(baseID)
+	end
+	if (not text or text == "") and displayID and displayID ~= identifier and displayID ~= baseID then
+		text = NS.GetBindingForAction(displayID)
+	end
 
 	-- Fallback: Use Retail API to find the spell on bars if cache missed or empty
 	if (not text or text == "") and NS.C_ActionBar_FindSpellActionButtons then
 		local slots = NS.C_ActionBar_FindSpellActionButtons(identifier)
 		if not slots or #slots == 0 then
 			slots = NS.C_ActionBar_FindSpellActionButtons(baseID)
+		end
+		if (not slots or #slots == 0) and displayID and displayID ~= identifier and displayID ~= baseID then
+			slots = NS.C_ActionBar_FindSpellActionButtons(displayID)
 		end
 
 		if slots and #slots > 0 then
@@ -391,14 +513,12 @@ function NS.GetKeyBindForSpellID(identifier)
 		end
 	end
 
-	return text
+	-- Store under the identifier (never nil, so cache hits are unambiguous).
+	cache[identifier] = text or ""
+	return cache[identifier]
 end
 
-function NS.WipeKeybindCache()
-	for k in NS.pairs(NS.keybindCache) do
-		NS.keybindCache[k] = nil
-	end
-end
+-- Keybind cache is wiped at the top of ReadKeybindings; no separate wipe function needed.
 
 -- ---------------------------------------------------------------------
 -- Assisted Combat spell list
@@ -408,12 +528,10 @@ function NS.SafeCallAssisted(fn, arg)
 		return false
 	end
 
+	-- Single protected call. GetNextCastSpell is a documented, stable API; the
+	-- pcall is only here to swallow rare transient errors (e.g. mid spec swap)
+	-- without breaking the ~8/sec update tick.
 	local ok, a, b, c, d, e = NS.pcall(fn, arg)
-	if ok then
-		return true, a, b, c, d, e
-	end
-
-	ok, a, b, c, d, e = NS.pcall(fn)
 	if ok then
 		return true, a, b, c, d, e
 	end
@@ -462,135 +580,51 @@ function NS.CollectNextSpell()
 end
 
 -- ---------------------------------------------------------------------
--- Avada Tracker Utilities
+-- Action state (range / usability) – ported from tullaRange
+--
+-- tullaRange operates on action-bar SLOTS via IsUsableAction / IsActionInRange.
+-- Our suggestion button is keyed off a spellID instead, so we use the spell
+-- equivalents: C_Spell.IsSpellUsable (isUsable, insufficientPower) and
+-- C_Spell.IsSpellInRange (true / false / nil). The returned state string maps
+-- onto the same buckets tullaRange uses: "normal", "oor", "oom", "unusable".
 -- ---------------------------------------------------------------------
-
-function NS.ParseAvadaString(str)
-	if not str then
-		return
-	end
-	local index, unit, aType, id = str:match("(%d+)Z(%w+)Z(%w+)Z(%d+)")
-	if index and unit and aType and id then
-		index = NS.tonumber(index)
-		id = NS.tonumber(id)
-
-		local geminiSpell = NS.AvadaGemini[id]
-		if geminiSpell and NS.IsSpellKnown(geminiSpell) then
-			id = geminiSpell
-		end
-
-		return index, unit, aType, id
-	end
-end
-
-function NS.UpdateAvadaWatchData()
-	NS.wipe(NS.WatchUnits)
-	NS.wipe(NS.WatchTypes)
-
-	for _, data in NS.pairs(NS.CachedAvadaData) do
-		if data.unit and data.unit ~= "" then
-			NS.WatchUnits[data.unit] = true
-		end
-		if data.type and data.type ~= "" then
-			NS.WatchTypes[data.type] = true
-		end
-	end
-end
-
-NS.CachedAvadaData = {}
-
-function NS.RefreshAvadaCachedData()
-	local specIndex = NS.GetSpecialization()
-	if not specIndex then
-		return
-	end
-	if specIndex > 4 then
-		specIndex = 1
+function NS.GetActionState(spellID, unit)
+	if not spellID then
+		return "normal", true, false, false
 	end
 
-	local specID = NS.GetSpecializationInfo(specIndex)
-	if not specID then
-		return
+	-- Usability + power. Default to usable if the API is unavailable so we never
+	-- grey out a perfectly castable suggestion on an older client.
+	local isUsable, notEnoughMana = true, false
+	if C_Spell_IsSpellUsable then
+		isUsable, notEnoughMana = C_Spell_IsSpellUsable(spellID)
 	end
 
-	-- Check for user-defined profile index
-	local activeIndex = (NS.db.avadaIndices and NS.db.avadaIndices[specID]) or 1
-	local data
-
-	if activeIndex ~= 1 then
-		-- index 1 is usually reserved for the default string or "none" in some contexts,
-		-- in our case, if index > 1 and we have a custom profile, use it.
-		if NS.db.avadaProfiles and NS.db.avadaProfiles[specID] and NS.db.avadaProfiles[specID][activeIndex] then
-			data = NS.db.avadaProfiles[specID][activeIndex]
+	-- Range: IsSpellInRange returns true (in range), false (out of range), or nil
+	-- (no valid range check – e.g. no target, or a spell with no range). Only an
+	-- explicit false counts as out-of-range, exactly like tullaRange.
+	local outOfRange = false
+	if C_Spell_IsSpellInRange then
+		local inRange = C_Spell_IsSpellInRange(spellID, unit)
+		-- A secret range result can't be compared; treat it as "no info".
+		if not (issecretvalue and issecretvalue(inRange)) then
+			outOfRange = inRange == false
 		end
 	end
 
-	-- Fallback to hardcoded default if index 1 or no custom profile found
-	if not data or data == "" then
-		data = NS.AvadaData[specID]
+	-- Midnight can return secret booleans for usability in combat. Branching on a
+	-- secret boolean errors, so when usability is secret we skip the usable/oom/
+	-- unusable buckets and fall back to the plain "normal" tint (range still works).
+	if issecretvalue and (issecretvalue(isUsable) or issecretvalue(notEnoughMana)) then
+		return "normal", true, false, outOfRange
 	end
 
-	NS.wipe(NS.CachedAvadaData)
-
-	if data and data ~= "" then
-		for part in data:gmatch("([^N]+)") do
-			local index, unit, aType, id = NS.ParseAvadaString(part)
-			if index and id then
-				NS.CachedAvadaData[index] = {
-					index = index,
-					unit = unit,
-					type = aType,
-					spellID = id,
-				}
-			end
-		end
-	end
-
-	NS.UpdateAvadaWatchData()
-end
-
-function NS.GetAvadaTargetList()
-	if #NS.CachedAvadaData == 0 then
-		NS.RefreshAvadaCachedData()
-	end
-	return NS.CachedAvadaData
-end
-
-function NS.IsAvadaWatchingUnit(unit)
-	for _, data in NS.ipairs(NS.CachedAvadaData) do
-		if data.unit == unit then
-			return true
-		end
-	end
-	return false
-end
-
-function NS.GetAuraInfo(unit, spellID, filter)
-	if not NS.C_UnitAuras_GetAuraDataBySpellID then
-		return
-	end
-
-	-- Optimize: Use O(1) lookup instead of looping 1-40
-	-- match NDui's "caster == 'player'" check by checking sourceUnit
-	local aura = NS.C_UnitAuras_GetAuraDataBySpellID(unit, spellID, filter)
-	if aura and aura.sourceUnit == "player" then
-		return aura, aura.points[1]
-	end
-
-	-- Fallback: If the header didn't strictly map by player, we might have gotten another unit's aura.
-	-- But since we only care about player source, and GetAuraDataBySpellID returns the first match,
-	-- we might technically miss a player aura if a non-player one is returned first?
-	-- Investigating: "filter" argument usually accepts "PLAYER" to filter by caster.
-	-- Let's better rely on the filter passed being correct or enforce it?
-	-- For now, this is a massive speedup for 99% of cases.
-end
-
-function NS.FormatNumber(value)
-	if value >= 1e6 then
-		return ("%.1fM"):format(value / 1e6):gsub("%.?0+([km])$", "%1")
-	elseif value >= 1e3 then
-		return ("%.1fK"):format(value / 1e3):gsub("%.?0+([km])$", "%1")
+	local state
+	if isUsable then
+		state = outOfRange and "oor" or "normal"
 	else
-		return NS.tostring(NS.math_floor(value))
+		state = notEnoughMana and "oom" or "unusable"
 	end
+
+	return state, isUsable, notEnoughMana, outOfRange
 end
