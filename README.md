@@ -11,10 +11,6 @@
 
 ---
 
-![BetterButtonAssistant — a styled Assisted Combat suggestion button](Media/Preview.png)
-
----
-
 ## Overview
 
 Blizzard's **Assisted Combat** tells you what to cast next, but the default suggestion is plain and disconnected from the rest of your UI. **BetterButtonAssistant** rebuilds it into a single, polished action-button: authentic Blizzard icon-frame art, the real keybind for the suggested spell, a cooldown swipe, a proc glow, and tullaRange-style range coloring — all configurable.
