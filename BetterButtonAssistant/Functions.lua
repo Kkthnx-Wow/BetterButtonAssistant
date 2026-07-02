@@ -4,17 +4,22 @@ local _, NS = ...
 -- Constants.lua loads before this file, so the cached API refs already exist.
 local math_floor = math.floor
 local math_ceil = math.ceil
+local table_concat = table.concat
 local C_Spell_GetOverrideSpell = NS.C_Spell_GetOverrideSpell
+local C_Spell_GetSpellInfo = NS.C_Spell_GetSpellInfo
+local C_Spell_GetSpellTexture = NS.C_Spell_GetSpellTexture
 local C_Spell_IsSpellUsable = NS.C_Spell_IsSpellUsable
 local C_Spell_IsSpellInRange = NS.C_Spell_IsSpellInRange
 local FindSpellOverrideByID = NS.FindSpellOverrideByID
+local UnitClass = NS.UnitClass
+local GetSpecialization = NS.GetSpecialization
+local GetSpecializationInfo = NS.GetSpecializationInfo
 -- Midnight (12.0) secret-value detector; nil on pre-Midnight clients (no-op guard).
 local issecretvalue = NS.issecretvalue
 
 -- ---------------------------------------------------------------------
 -- Utility Functions
 -- ---------------------------------------------------------------------
-
 
 function NS.CopyDefaults(dst, src)
 	for k, v in NS.pairs(src) do
@@ -27,6 +32,231 @@ function NS.CopyDefaults(dst, src)
 			dst[k] = v
 		end
 	end
+end
+
+-- Current specialization key for per-spec combat settings. The class ID makes the
+-- key stable across classes even if spec IDs ever collide in future content.
+function NS.GetSpecKey()
+	if not UnitClass or not GetSpecialization or not GetSpecializationInfo then
+		return nil
+	end
+
+	local _, _, classID = UnitClass("player")
+	local specIndex = GetSpecialization()
+	if not classID or not specIndex then
+		return nil
+	end
+
+	local specID = GetSpecializationInfo(specIndex)
+	if not specID then
+		return nil
+	end
+
+	return classID .. "-" .. specID
+end
+
+-- Player-facing specialization label for settings UI (e.g. "Vengeance (Demon Hunter)").
+-- The internal storage key remains GetSpecKey()'s "classID-specID" form.
+function NS.GetSpecDisplayName()
+	if not UnitClass or not GetSpecialization or not GetSpecializationInfo then
+		return nil
+	end
+
+	local className = UnitClass("player")
+	local specIndex = GetSpecialization()
+	if not specIndex then
+		return nil
+	end
+
+	local _, specName = GetSpecializationInfo(specIndex)
+	if not specName or specName == "" then
+		return className
+	end
+	if className and className ~= "" then
+		return specName .. " (" .. className .. ")"
+	end
+	return specName
+end
+
+function NS.GetSpecConfig(specKey)
+	if not NS.db then
+		return nil
+	end
+	specKey = specKey or NS.GetSpecKey()
+	if not specKey then
+		return nil
+	end
+
+	local all = NS.db.specSettings
+	if NS.type(all) ~= "table" then
+		all = {}
+		NS.db.specSettings = all
+	end
+
+	local cfg = all[specKey]
+	if NS.type(cfg) ~= "table" then
+		cfg = {}
+		all[specKey] = cfg
+	end
+	NS.CopyDefaults(cfg, NS.SpecDefaults)
+	return cfg
+end
+
+-- Run before NS.CopyDefaults on load. Bump NS.SCHEMA_VERSION when adding steps.
+function NS.MigrateDatabase(db)
+	if not db then
+		return
+	end
+	local version = db.schemaVersion or 1
+	if version < 2 then
+		-- v1 -> v2: formal schemaVersion field (inline onlyInCombat migration stays in main).
+		db.schemaVersion = 2
+	end
+end
+
+function NS.ValidateSpellID(spellID)
+	spellID = math_floor(NS.tonumber(spellID) or 0)
+	if spellID <= 0 then
+		return 0, "None", false, nil
+	end
+
+	local name
+	if C_Spell_GetSpellInfo then
+		local info = C_Spell_GetSpellInfo(spellID)
+		name = info and info.name
+	end
+
+	local texture = C_Spell_GetSpellTexture and C_Spell_GetSpellTexture(spellID)
+	if name and name ~= "" then
+		return spellID, name .. " (" .. spellID .. ")", true, texture
+	end
+	return spellID, "Unknown spell (" .. spellID .. ")", false, texture
+end
+
+-- Defensive list editor: valid spells that Blizzard does not flag as external
+-- defensives get an orange warning (still accepted — player may know better).
+function NS.ValidateDefensiveSpellID(spellID)
+	local id, text, valid, texture = NS.ValidateSpellID(spellID)
+	if valid and NS.C_Spell_IsExternalDefensive then
+		local ok, isDef = NS.pcall(NS.C_Spell_IsExternalDefensive, id)
+		if ok and isDef == false then
+			text = text .. " — not flagged as defensive"
+		end
+	end
+	return id, text, valid, texture
+end
+
+function NS.ValidateItemID(itemID)
+	itemID = math_floor(NS.tonumber(itemID) or 0)
+	if itemID <= 0 then
+		return 0, "None", false, nil
+	end
+
+	local name, texture
+	if C_Item and C_Item.GetItemInfoInstant then
+		local itemName, _, _, _, _, _, _, _, _, itemTexture = C_Item.GetItemInfoInstant(itemID)
+		name = itemName
+		texture = itemTexture
+	elseif GetItemInfoInstant then
+		local itemName, _, _, _, _, _, _, _, _, itemTexture = GetItemInfoInstant(itemID)
+		name = itemName
+		texture = itemTexture
+	end
+
+	if name and name ~= "" then
+		return itemID, name .. " (" .. itemID .. ")", true, texture
+	end
+	return itemID, "Unknown item (" .. itemID .. ")", false, texture
+end
+
+function NS.ParseSpellIDList(raw)
+	local ids, invalid, seen = {}, {}, {}
+	if NS.type(raw) ~= "string" or raw == "" then
+		return ids, invalid
+	end
+
+	for token in raw:gmatch("[^,%s]+") do
+		local id = NS.tonumber(token)
+		if id and id > 0 and math_floor(id) == id then
+			if not seen[id] then
+				ids[#ids + 1] = id
+				seen[id] = true
+			end
+		else
+			invalid[#invalid + 1] = token
+		end
+	end
+
+	return ids, invalid
+end
+
+function NS.FormatSpellIDList(ids)
+	if NS.type(ids) ~= "table" or #ids == 0 then
+		return ""
+	end
+
+	local out = {}
+	for i = 1, #ids do
+		out[i] = NS.tostring(ids[i])
+	end
+	return table_concat(out, ", ")
+end
+
+-- Parses (and memoizes per spec) the current spec's comma/space-separated
+-- spell-range list into an array of numeric spell IDs. Returns an empty array
+-- when unset. The cache is wiped on spec/talent changes via ReadKeybindings.
+function NS.GetSpecSpellRangeList()
+	local specKey = NS.GetSpecKey()
+	if not specKey then
+		return nil
+	end
+
+	local cache = NS.SpecSpellRangeCache
+	local cached = cache[specKey]
+	if cached then
+		return cached
+	end
+
+	local list = {}
+	local cfg = NS.GetSpecConfig(specKey)
+	local raw = cfg and cfg.spellRangeList
+	if NS.ParseSpellIDList then
+		list = NS.ParseSpellIDList(raw)
+	end
+
+	cache[specKey] = list
+	return list
+end
+
+-- Whether the target is within range of any spell in the spec's range list.
+-- Returns true / false / nil (nil = no list, no usable info, or all secret), so
+-- callers can show a neutral state when we genuinely can't tell. Secret-safe:
+-- a secret IsSpellInRange result is never compared, just skipped.
+function NS.IsTargetInSpecRange()
+	if not C_Spell_IsSpellInRange then
+		return nil
+	end
+	local list = NS.GetSpecSpellRangeList()
+	if not list or #list == 0 then
+		return nil
+	end
+
+	local sawInfo = false
+	for i = 1, #list do
+		local inRange = C_Spell_IsSpellInRange(list[i], "target")
+		if not (issecretvalue and issecretvalue(inRange)) then
+			if inRange == true then
+				return true
+			elseif inRange == false then
+				sawInfo = true
+			end
+		end
+	end
+
+	if sawInfo then
+		return false
+	end
+	return nil
 end
 
 -- ---------------------------------------------------------------------
@@ -104,16 +334,11 @@ function NS.StoreKeybindInfo(page, key, aType, id, console)
 	end
 
 	local keys = NS.Hotkeys
-	local updatedKeys = NS.UpdatedHotkeys
 
-	-- Hekili uses an 'action' string internally. We will map the ID directly.
+	-- We key the database by the action's ID string (the spell ID we later look the
+	-- keybind up by). Items never get queried — the suggestion is always a spell —
+	-- so item slots are only relevant when a macro resolves to a spell (handled below).
 	local action = NS.tostring(id)
-
-	if aType == "item" then
-		if NS.ItemToAbility[id] then
-			action = NS.ItemToAbility[id]
-		end
-	end
 
 	if action then
 		if aType == "macro" then
@@ -145,7 +370,6 @@ function NS.StoreKeybindInfo(page, key, aType, id, console)
 				keys[act].upper[page] = NS.improvedGetBindingText(key)
 				keys[act].lower[page] = NS.string_lower(keys[act].upper[page])
 			end
-			updatedKeys[act] = true
 		end
 
 		save(action)
@@ -169,18 +393,27 @@ end
 
 function NS.ReadKeybindings(event)
 	local keys = NS.Hotkeys
-	local updatedKeys = NS.UpdatedHotkeys
 
-	for k, v in NS.pairs(keys) do
+	for _, v in NS.pairs(keys) do
 		NS.wipe(v.console)
 		NS.wipe(v.upper)
 		NS.wipe(v.lower)
 	end
-	NS.wipe(updatedKeys)
 	NS.wipe(NS.KeybindCache)
 	NS.wipe(NS.ActionSlotCache)
 	NS.wipe(NS.SpellVariantCache)
 	NS.wipe(NS.KeybindTextCache)
+	-- Pooled-power type can change with talents/spec, so drop it on rebuilds too.
+	if NS.PoolPowerCache then
+		NS.wipe(NS.PoolPowerCache)
+	end
+	-- The active spec key can change here too, so drop the parsed range list memo.
+	if NS.SpecSpellRangeCache then
+		NS.wipe(NS.SpecSpellRangeCache)
+	end
+	if NS.SpecDefensiveCache then
+		NS.wipe(NS.SpecDefensiveCache)
+	end
 
 	local slotsUsed = {}
 
@@ -307,11 +540,7 @@ function NS.ReadKeybindings(event)
 
 	for i = 73, 144 do
 		if not slotsUsed[i] then
-			NS.StoreKeybindInfo(
-				7 + math_floor((i - 73) / 12),
-				NS.GetBindingKey("ACTIONBUTTON" .. 1 + (i - 73) % 12),
-				NS.GetActionInfo(i)
-			)
+			NS.StoreKeybindInfo(7 + math_floor((i - 73) / 12), NS.GetBindingKey("ACTIONBUTTON" .. 1 + (i - 73) % 12), NS.GetActionInfo(i))
 			slotsUsed[i] = true
 		end
 	end
@@ -341,64 +570,55 @@ function NS.ReadKeybindings(event)
 				local bind = NS._G.ConsolePort:GetActionBinding(i)
 				local key, mod = NS._G.ConsolePort:GetCurrentBindingOwner(bind)
 				if key then
-					NS.StoreKeybindInfo(
-						math_ceil(i / 12),
-						NS._G.ConsolePort:GetFormattedButtonCombination(key, mod),
-						action,
-						id,
-						"cPort"
-					)
+					NS.StoreKeybindInfo(math_ceil(i / 12), NS._G.ConsolePort:GetFormattedButtonCombination(key, mod), action, id, "cPort")
 				end
 			end
 		end
 	end
 end
 
-function NS.GetBindingForAction(key, display, i)
+-- Returns the best keybind text for an action entry. Upper-case abbreviations
+-- are always used (the "display" / "console" parameter path was dead code —
+-- every caller passes one argument — and has been removed for clarity).
+--
+-- Bar priority order: Druid and Rogue form/stealth bar ordering is resolved via
+-- GetShapeshiftFormID() (returns the stable form spell/type ID) so form
+-- detection is correct regardless of which shapeshift button slot the form
+-- occupies. Blizzard's own Midnight constants confirm:
+--   DRUID_CAT_FORM = 1, DRUID_TRAVEL_FORM = 3, DRUID_BEAR_FORM = 5
+function NS.GetBindingForAction(key)
 	if not key then
 		return ""
 	end
 
-	-- Map the key (action ID) to the hotkey string
 	key = NS.tostring(key)
 
-	if not NS.Hotkeys[key] then
+	local hotkey = NS.Hotkeys[key]
+	if not hotkey then
 		return ""
 	end
 
-	local keys = NS.Hotkeys
-
-	local caps, console = true, false
-	-- Simplified display/caps logic since we don't have the full display object here
-	if display then
-		local queued = (i or 1) > 1 and display.keybindings.separateQueueStyle
-		caps = not (queued and display.keybindings.queuedLowercase or display.keybindings.lowercase)
-		console = NS._G.ConsolePort ~= nil and display.keybindings.cPortOverride
-	end
-
-	local db = console and keys[key].console or (caps and keys[key].upper or keys[key].lower)
-
-	local output, source
+	local db    = hotkey.upper
 	local order = NS.BarOrder["DEFAULT"]
 
-	-- Cache player class once per session; refreshed if class somehow changes.
 	local _, class = NS.UnitClass("player")
 	if class == "DRUID" then
-		local form = NS._G.GetShapeshiftForm()
-		if form == 1 then -- Bear
+		-- Use GetShapeshiftFormID for stable form detection (returns form spell/type
+		-- ID, not the shapeshift button slot index that GetShapeshiftForm returns).
+		local formID = NS._G.GetShapeshiftFormID and NS._G.GetShapeshiftFormID() or 0
+		local CAT    = NS._G.DRUID_CAT_FORM    or 1
+		local TRAVEL = NS._G.DRUID_TRAVEL_FORM  or 3
+		local BEAR   = NS._G.DRUID_BEAR_FORM    or 5
+
+		if formID == CAT then
+			order = NS._G.IsStealthed() and NS.BarOrder["DRUID_PROWL"] or NS.BarOrder["DRUID_CAT"]
+		elseif formID == BEAR then
 			order = NS.BarOrder["DRUID_BEAR"]
-		elseif form == 2 then -- Cat
-			if NS._G.IsStealthed() then
-				order = NS.BarOrder["DRUID_PROWL"]
-			else
-				order = NS.BarOrder["DRUID_CAT"]
-			end
-		elseif form == 3 then -- Travel
-			order = NS.BarOrder["DRUID_TRAVEL"]
-		elseif form == 4 then -- Moonkin
-			order = NS.BarOrder["DRUID_OWL"]
-		elseif form == 5 then -- Tree/Resto
-			order = NS.BarOrder["DRUID_TREE"]
+		elseif formID == TRAVEL then
+			order = NS.BarOrder["DEFAULT"]  -- Travel uses the same bar as the main bar
+		else
+			-- Moonkin, Tree of Life, or any future form: default bar order.
+			order = NS.BarOrder["DEFAULT"]
 		end
 	elseif class == "ROGUE" then
 		if NS._G.IsStealthed() then
@@ -407,40 +627,13 @@ function NS.GetBindingForAction(key, display, i)
 	end
 
 	for _, n in NS.ipairs(order) do
-		output = db[n]
-		if output and output ~= "" then
-			source = n
-			break
+		local out = db[n]
+		if out and out ~= "" then
+			return out
 		end
 	end
 
-	output = output or ""
-
-	if output ~= "" and console then
-		local size = output:match("Icons(%d%d)")
-		size = NS.tonumber(size)
-		if size then
-			local margin = NS.math_floor(size * (display and display.keybindings.cPortZoom or 1) * 0.5)
-			output = output:gsub(
-				":0|t",
-				":0:"
-					.. size
-					.. ":"
-					.. size
-					.. ":"
-					.. margin
-					.. ":"
-					.. (size - margin)
-					.. ":"
-					.. margin
-					.. ":"
-					.. (size - margin)
-					.. "|t"
-			)
-		end
-	end
-
-	return output
+	return ""
 end
 
 function NS.GetKeyBindForSpellID(identifier)
@@ -549,34 +742,192 @@ function NS.IsAssistedCombatAvailable()
 	return NS.C_AssistedCombat_GetNextCastSpell ~= nil
 end
 
+local function ApplyMovingOverride(spellID)
+	if not spellID or not NS.playerIsMoving then
+		return spellID
+	end
+
+	local cfg = NS.GetSpecConfig and NS.GetSpecConfig()
+	if not cfg or not cfg.movingOverrideEnabled then
+		return spellID
+	end
+
+	local fallback = NS.tonumber(cfg.movingOverrideSpellID) or 0
+	if fallback <= 0 then
+		return spellID
+	end
+
+	if issecretvalue and (issecretvalue(spellID) or issecretvalue(fallback)) then
+		return spellID
+	end
+
+	local castTime = 0
+	if C_Spell_GetSpellInfo then
+		local info = C_Spell_GetSpellInfo(spellID)
+		castTime = (info and info.castTime) or 0
+	end
+
+	if castTime > 0 then
+		return fallback
+	end
+	return spellID
+end
+
 function NS.CollectNextSpell()
 	local checkVisible = NS.db.checkVisibleButton and true or false
+
+	-- Returns sid when it's a usable spell ID: non-zero, or secret (can't compare to 0).
+	local function AcceptSpellID(sid)
+		return NS.AcceptSpellID and NS.AcceptSpellID(sid)
+	end
 
 	-- 1. Main Recommendation (The "One-Punch" logic that worked before)
 	if NS.C_AssistedCombat_GetNextCastSpell then
 		local ok, sid = NS.SafeCallAssisted(NS.C_AssistedCombat_GetNextCastSpell, checkVisible)
-		if ok and sid and sid ~= 0 then
-			return sid
+		if ok and AcceptSpellID(sid) then
+			return ApplyMovingOverride(sid)
 		end
 	end
 
 	-- 2. Highlights (Cyan highlights from the Assisted Combat menu)
 	if NS.C_AssistedCombat_GetRotationSpells then
 		local spells = NS.C_AssistedCombat_GetRotationSpells()
-		if spells and spells[1] and spells[1] ~= 0 then
-			return spells[1]
+		if AcceptSpellID(spells and spells[1]) then
+			return ApplyMovingOverride(spells[1])
 		end
 	end
 
 	-- 3. Last Resort (12.0.0 specific recommendation)
 	if NS.C_AssistedCombat_GetActionSpell then
 		local sid = NS.C_AssistedCombat_GetActionSpell()
-		if sid and sid ~= 0 then
-			return sid
+		if AcceptSpellID(sid) then
+			return ApplyMovingOverride(sid)
 		end
 	end
 
 	return nil
+end
+
+-- True when sid is a non-nil spell ID we can use (non-zero, or secret — can't compare).
+function NS.AcceptSpellID(sid)
+	if not sid then
+		return false
+	end
+	if issecretvalue and issecretvalue(sid) then
+		return true
+	end
+	return sid ~= 0
+end
+
+-- Upcoming rotation preview from Blizzard's assisted-combat list (same order as
+-- AssistedCombatManager.rotationSpells / C_AssistedCombat.GetRotationSpells).
+-- Starts after the current next-cast pick when it appears in the list; otherwise
+-- skips the first entry (usually the same as the main suggestion).
+function NS.CollectRotationQueue(maxCount, primarySpellID)
+	maxCount = maxCount or 3
+	if maxCount <= 0 or not NS.C_AssistedCombat_GetRotationSpells then
+		return nil
+	end
+
+	local rotation = NS.C_AssistedCombat_GetRotationSpells()
+	if not rotation or #rotation == 0 then
+		return nil
+	end
+
+	local startIdx = 1
+	if primarySpellID and NS.AcceptSpellID(primarySpellID) and not (issecretvalue and issecretvalue(primarySpellID)) then
+		local displayPrimary = NS.GetDisplaySpellID and NS.GetDisplaySpellID(primarySpellID) or primarySpellID
+		for i = 1, #rotation do
+			local sid = rotation[i]
+			if not (issecretvalue and issecretvalue(sid)) then
+				if sid == primarySpellID or sid == displayPrimary then
+					startIdx = i + 1
+					break
+				end
+			end
+		end
+	else
+		startIdx = 2
+	end
+
+	local out = {}
+	for i = startIdx, #rotation do
+		local sid = rotation[i]
+		if NS.AcceptSpellID(sid) then
+			out[#out + 1] = sid
+			if #out >= maxCount then
+				break
+			end
+		end
+	end
+
+	return #out > 0 and out or nil
+end
+
+-- Parsed per-spec defensive spell list (comma-separated IDs in Advanced settings).
+function NS.GetSpecDefensiveList()
+	local specKey = NS.GetSpecKey()
+	if not specKey then
+		return nil
+	end
+
+	local cache = NS.SpecDefensiveCache
+	local cached = cache[specKey]
+	if cached then
+		return cached
+	end
+
+	local list = {}
+	local cfg = NS.GetSpecConfig(specKey)
+	local raw = cfg and cfg.defensiveSpellList
+	if NS.ParseSpellIDList then
+		list = NS.ParseSpellIDList(raw)
+	end
+
+	cache[specKey] = list
+	return list
+end
+
+-- Health gate for defensives. threshold 0 = always pass. Secret health in combat
+-- fails open (show readiness) — we cannot compare secret numbers in tainted code.
+function NS.PlayerHealthAtOrBelowThreshold(threshold)
+	threshold = threshold or 0
+	if threshold <= 0 then
+		return true
+	end
+	if not UnitHealth or not UnitHealthMax then
+		return true
+	end
+	local hp = UnitHealth("player")
+	local max = UnitHealthMax("player")
+	if issecretvalue and (issecretvalue(hp) or issecretvalue(max)) then
+		return true
+	end
+	if not max or max <= 0 then
+		return false
+	end
+	return (hp / max) * 100 <= threshold
+end
+
+-- Whether a configured defensive should pulse the kick-now glow: off cooldown,
+-- usable (not greyed unusable), and the per-spec health gate passes.
+function NS.ShouldSuggestDefensive(spellID)
+	if not spellID then
+		return false
+	end
+
+	local cfg = NS.GetSpecConfig()
+	local threshold = cfg and cfg.defensiveHealthThreshold or 0
+	if not NS.PlayerHealthAtOrBelowThreshold(threshold) then
+		return false
+	end
+
+	local state = NS.GetActionState(spellID, "player")
+	if state == "unusable" then
+		return false
+	end
+
+	return true
 end
 
 -- ---------------------------------------------------------------------
